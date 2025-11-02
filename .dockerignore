@@ -1,0 +1,24 @@
+
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Environments
+.env
+.venv
+
+# IDEs and editors
+.idea/
+.vscode/
+
+# Git
+.git
+.gitignore
+
+# Datasets
+dataset/
+
+# Models
+Models/

@@ -1,0 +1,16 @@
+keras
+numpy
+onnx
+onnxruntime
+pandas
+Pillow
+PyYAML
+qqdm
+scipy
+tensorflow
+tf2onnx
+tqdm
+ultralytics
+fastapi
+uvicorn
+python-multipart

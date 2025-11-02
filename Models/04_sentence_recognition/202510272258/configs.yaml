@@ -1,0 +1,20 @@
+__firstlineno__: 6
+__static_attributes__: !!python/tuple
+- batch_size
+- height
+- learning_rate
+- max_text_length
+- model_path
+- train_epochs
+- train_workers
+- vocab
+- width
+batch_size: 64
+height: 64
+learning_rate: 0.0005
+max_text_length: 93
+model_path: Models/04_sentence_recognition\202510272258
+train_epochs: 10
+train_workers: 4
+vocab: MS3n4QkGIJUeHYhR?(l0pCvX:fPAqLcNxWts1D-aKEru7zwy25Zm)6'8oFjV.g9ib!&/T ;"#*B,dO+
+width: 1024
