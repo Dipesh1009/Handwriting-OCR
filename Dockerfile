@@ -2,6 +2,8 @@
 # Use a base image with Python and necessary libraries
 FROM python:3.9-slim
 
+RUN apt-get update && apt-get install -y libgl1-mesa-glx
+
 # Set the working directory in the container
 WORKDIR /app
 
