@@ -51,18 +51,146 @@ Here is a more detailed breakdown of the most important files in the project:
     -   **Training:** It trains the model using the `model.fit()` method, passing the training and validation data providers and the callbacks.
     -   **Saving Datasets:** After training, it saves the training and validation datasets as CSV files for future reference.
 
--   **`model.py`**: This file defines the architecture of the CRNN model using the Keras functional API.
-    -   The `train_model` function takes the input dimensions and output dimension as arguments.
-    -   The model starts with a `Lambda` layer to normalize the input image pixels to the range [0, 1].
-    -   It then consists of a series of residual blocks, which are a type of convolutional block that helps in training deep networks by using skip connections. These blocks progressively reduce the spatial dimensions of the feature maps while increasing the number of channels.
-    -   After the convolutional layers, the feature maps are reshaped and passed to a `Bidirectional LSTM` layer. The bidirectional nature of the LSTM allows it to learn from both past and future context in the sequence of features.
-    -   Finally, a dense layer with a softmax activation function is used to output the probability distribution over the vocabulary for each time step.
+-   **`model.py`**: This file defines the architecture of the CRNN model using the Keras functional API. The `train_model` function is the core of this file, and it constructs the model layer by layer.
+
+    ```python
+    from keras import layers
+    from keras.models import Model
+
+    from mltu.tensorflow.model_utils import residual_block
+
+
+    def train_model(input_dim, output_dim, activation="leaky_relu", dropout=0.2):
+        
+        inputs = layers.Input(shape=input_dim, name="input")
+    ```
+    - **`inputs = layers.Input(shape=input_dim, name="input")`**: This line defines the input layer of the model. It specifies the shape of the input data, which is an image with dimensions `input_dim` (height, width, channels).
+
+    ```python
+        # normalize images here instead in preprocessing step
+        input = layers.Lambda(lambda x: x / 255)(inputs)
+    ```
+    - **`input = layers.Lambda(lambda x: x / 255)(inputs)`**: This is a normalization layer. It takes the input image and divides each pixel value by 255. This scales the pixel values from the range [0, 255] to [0, 1], which is a common practice in deep learning to help the model converge faster.
+
+    ```python
+        x1 = residual_block(input, 32, activation=activation, skip_conv=True, strides=1, dropout=dropout)
+
+        x2 = residual_block(x1, 32, activation=activation, skip_conv=True, strides=2, dropout=dropout)
+        x3 = residual_block(x2, 32, activation=activation, skip_conv=False, strides=1, dropout=dropout)
+
+        x4 = residual_block(x3, 64, activation=activation, skip_conv=True, strides=2, dropout=dropout)
+        x5 = residual_block(x4, 64, activation=activation, skip_conv=False, strides=1, dropout=dropout)
+
+        x6 = residual_block(x5, 128, activation=activation, skip_conv=True, strides=2, dropout=dropout)
+        x7 = residual_block(x6, 128, activation=activation, skip_conv=True, strides=1, dropout=dropout)
+
+        x8 = residual_block(x7, 128, activation=activation, skip_conv=True, strides=2, dropout=dropout)
+        x9 = residual_block(x8, 128, activation=activation, skip_conv=False, strides=1, dropout=dropout)
+    ```
+    - **`residual_block(...)`**: These lines define the convolutional part of the model. The model uses a series of residual blocks to extract features from the input image.
+        - **`residual_block`**: This is a custom function (likely defined in `mltu.tensorflow.model_utils`) that creates a block of convolutional layers with a skip connection. Skip connections help to prevent the vanishing gradient problem in deep networks.
+        - **`32`, `64`, `128`**: These numbers represent the number of filters in the convolutional layers. As we go deeper into the network, the number of filters increases, which allows the model to learn more complex features.
+        - **`strides=2`**: A stride of 2 in the convolutional layers is used for downsampling the feature maps. This reduces the spatial dimensions of the feature maps, which helps to reduce the computational cost and also increases the receptive field of the subsequent layers.
+
+    ```python
+        squeezed = layers.Reshape((x9.shape[-3] * x9.shape[-2], x9.shape[-1]))(x9)
+    ```
+    - **`squeezed = layers.Reshape(...)`**: This layer reshapes the output of the convolutional layers to prepare it for the recurrent layers. The 2D feature maps are "squeezed" into a sequence of feature vectors.
+
+    ```python
+        blstm = layers.Bidirectional(layers.LSTM(256, return_sequences=True))(squeezed)
+        blstm = layers.Dropout(dropout)(blstm)
+
+        blstm = layers.Bidirectional(layers.LSTM(64, return_sequences=True))(blstm)
+        blstm = layers.Dropout(dropout)(blstm)
+    ```
+    - **`blstm = layers.Bidirectional(layers.LSTM(...))`**: These lines define the recurrent part of the model.
+        - **`layers.LSTM(256, return_sequences=True)`**: This is a Long Short-Term Memory (LSTM) layer. LSTMs are a type of RNN that are very effective at learning long-range dependencies in sequential data. `return_sequences=True` is important because we want the LSTM to output a sequence of vectors (one for each time step) that can be passed to the next layer.
+        - **`layers.Bidirectional(...)`**: This wrapper makes the LSTM layer bidirectional. A bidirectional LSTM processes the sequence in both forward and backward directions, which allows it to learn from both past and future context. This is very useful for handwriting recognition, as the context of a character can depend on the characters that come before and after it.
+        - **`layers.Dropout(dropout)`**: Dropout is a regularization technique that helps to prevent overfitting. It randomly sets a fraction of the input units to 0 at each update during training time.
+
+    ```python
+        output = layers.Dense(output_dim + 1, activation="softmax", name="output")(blstm)
+    ```
+    - **`output = layers.Dense(...)`**: This is the final output layer of the model.
+        - **`output_dim + 1`**: The number of units in this layer is the size of the vocabulary plus one. The extra unit is for the "blank" label required by the CTC loss function.
+        - **`activation="softmax"`**: The softmax activation function is used to output a probability distribution over the vocabulary for each time step.
+
+    ```python
+        model = Model(inputs=inputs, outputs=output)
+        return model
+    ```
+    - **`model = Model(inputs=inputs, outputs=output)`**: This line creates the Keras `Model` object by specifying the input and output layers.
+    - **`return model`**: The function returns the compiled Keras model.
 
 -   **`inferenceModel.py`**: This file defines the `ImageToWordModel` class, which is used for making predictions with the trained ONNX model.
-    -   It inherits from the `OnnxInferenceModel` class from the `mltu` library.
-    -   The `__init__` method initializes the ONNX inference session and stores the character list (vocabulary).
-    -   The `predict` method takes an image as input, resizes it to the model's expected input size while maintaining the aspect ratio, and then runs the inference using the ONNX runtime.
-    -   The output of the model is a sequence of probability distributions over the vocabulary. The `ctc_decoder` function is used to decode this sequence into the final predicted text.
+
+    ```python
+    import cv2
+    import typing
+    import numpy as np
+
+    from mltu.inferenceModel import OnnxInferenceModel
+    from mltu.utils.text_utils import ctc_decoder, get_cer, get_wer
+    from mltu.transformers import ImageResizer
+
+    class ImageToWordModel(OnnxInferenceModel):
+    ```
+    - **`class ImageToWordModel(OnnxInferenceModel):`**: This defines the `ImageToWordModel` class, which inherits from `OnnxInferenceModel` from the `mltu` library. This base class likely handles the loading of the ONNX model and setting up the inference session.
+
+    ```python
+        def __init__(self, char_list: typing.Union[str, list], *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.char_list = char_list
+    ```
+    - **`def __init__(...)`**: This is the constructor for the class.
+        - **`super().__init__(*args, **kwargs)`**: This calls the constructor of the parent class (`OnnxInferenceModel`) to initialize the ONNX inference session.
+        - **`self.char_list = char_list`**: This stores the character list (vocabulary) that is needed for decoding the model's output.
+
+    ```python
+        def predict(self, image: np.ndarray):
+    ```
+    - **`def predict(self, image: np.ndarray):`**: This is the main method for making predictions. It takes an image (as a NumPy array) as input.
+
+    ```python
+            image = ImageResizer.resize_maintaining_aspect_ratio(image, *self.input_shapes[0][1:3][::-1])
+    ```
+    - **`image = ImageResizer.resize_maintaining_aspect_ratio(...)`**: This line preprocesses the input image. It resizes the image to the size expected by the model while maintaining the aspect ratio. This is important to avoid distorting the characters in the image.
+
+    ```python
+            image_pred = np.expand_dims(image, axis=0).astype(np.float32)
+    ```
+    - **`image_pred = np.expand_dims(image, axis=0).astype(np.float32)`**: This line prepares the image for inference.
+        - **`np.expand_dims(image, axis=0)`**: The model expects a batch of images as input, so this adds an extra dimension to the image array to create a batch of size 1.
+        - **`.astype(np.float32)`**: This converts the image data type to `float32`, which is the data type expected by the model.
+
+    ```python
+            preds = self.model.run(self.output_names, {self.input_names[0]: image_pred})[0]
+    ```
+    - **`preds = self.model.run(...)`**: This is where the actual inference happens.
+        - **`self.model.run(...)`**: This method of the ONNX runtime session executes the model.
+        - **`self.output_names`**: This specifies the names of the output nodes of the model that we want to get.
+        - **`{self.input_names[0]: image_pred}`**: This is a dictionary that maps the input names of the model to the input data.
+        - **`[0]`**: The `run` method returns a list of outputs, so we take the first element, which is the output of our model.
+
+    ```python
+            text = ctc_decoder(preds, self.char_list)[0]
+    ```
+    - **`text = ctc_decoder(preds, self.char_list)[0]`**: This line decodes the output of the model to get the final predicted text.
+        - **`ctc_decoder`**: This function (from `mltu.utils.text_utils`) implements the CTC decoding algorithm. It takes the probability distribution from the model and the character list as input and returns the most likely text sequence.
+        - **`[0]`**: The `ctc_decoder` can decode a batch of predictions, so we take the first element to get the text for our single image.
+
+    ```python
+            return text
+    ```
+    - **`return text`**: The method returns the predicted text.
+
+    ```python
+    if __name__ == "__main__":
+    ```
+    - **`if __name__ == "__main__":`**: This block of code is executed only when the script is run directly (not when it is imported as a module). It is used for testing the `ImageToWordModel` class.
+        - It loads the model configuration, creates an instance of the `ImageToWordModel`, and then iterates over the validation set.
+        - For each image in the validation set, it makes a prediction and then calculates the Character Error Rate (CER) and Word Error Rate (WER) to evaluate the model's performance.
 
 -   **`configs.py`**: This file defines the `ModelConfigs` class, which inherits from `BaseModelConfigs` in the `mltu` library.
     -   It defines all the hyperparameters and configurations for the model and training process, such as the image dimensions (`height`, `width`), `batch_size`, `learning_rate`, `train_epochs`, etc.
