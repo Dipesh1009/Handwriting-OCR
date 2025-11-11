@@ -138,3 +138,24 @@ if uploaded_file is not None:
                 except Exception as e:
                     st.error(f"The magic fizzled... Error: {e}")
 
+
+
+
+
+# Content of requirements.txt
+# keras
+# numpy
+# onnx
+# onnxruntime
+# pandas
+# Pillow
+# PyYAML
+# qqdm
+# scipy
+# tensorflow
+# tf2onnx
+# tqdm
+# ultralytics
+# fastapi
+# uvicorn
+# python-multipart
